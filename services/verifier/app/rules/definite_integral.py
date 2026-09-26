@@ -60,15 +60,19 @@ def extract_definite_integral_info(payload: VerifyRequest) -> dict | None:
         cleaned = cleaned.replace("\\mathrm{d}x", "dx")
 
         # LaTeX: \int_{a}^{b} expr dx  or  \int_a^b expr dx
+        # Each bound is either a braced group (any non-brace content, so
+        # "\infty" is captured whole) or a bare non-space token.
         m = re.search(
-            r"\\int\s*_\s*\{?\s*(.+?)\s*\}?\s*\^\s*\{?\s*(.+?)\s*\}?\s*(.+?)(?:d\s*x|dx)(?:\b|$)",
+            r"\\int\s*_(?:\{\s*([^{}]+?)\s*\}|([^{}\s]+))"
+            r"\s*\^(?:\{\s*([^{}]+?)\s*\}|([^{}\s]+))"
+            r"\s*(.+?)(?:d\s*x|dx)(?:\b|$)",
             cleaned,
         )
         if m:
             return {
-                "lower": m.group(1).strip(),
-                "upper": m.group(2).strip(),
-                "integrand": m.group(3).strip(),
+                "lower": (m.group(1) or m.group(2)).strip(),
+                "upper": (m.group(3) or m.group(4)).strip(),
+                "integrand": m.group(5).strip(),
             }
 
     # English: "integrate expr from a to b"

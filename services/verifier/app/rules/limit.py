@@ -1,6 +1,6 @@
 import re
-from sympy import limit
-from app.engine.parser import X, LOCAL_SYMBOLS, parse_math_expression
+from sympy import Symbol, limit
+from app.engine.parser import LOCAL_SYMBOLS, parse_math_expression
 from app.engine.matcher import expressions_match_or_numeric, verify_equivalent_step
 from app.engine.responses import VerifyRequest, VerifyResponse, unsupported_response
 
@@ -22,7 +22,11 @@ def verify_limit(payload: VerifyRequest) -> VerifyResponse:
             "The limit expression or final answer could not be parsed.",
         )
 
-    var = LOCAL_SYMBOLS.get(target.get("var", "x"), X)
+    var_name = target.get("var", "x")
+    # Fall back to a fresh Symbol for variables outside the canonical set
+    # (e.g. "n"); defaulting to X here silently computed the limit in the
+    # wrong variable and mismatched correct answers.
+    var = LOCAL_SYMBOLS.get(var_name, Symbol(var_name))
 
     try:
         expected = limit(expr, var, point)
@@ -54,10 +58,18 @@ def extract_limit_info(payload: VerifyRequest) -> dict | None:
     source = payload.problem_text
 
     # LaTeX: \lim_{x \to a} expr  or  \lim_{x\to a} expr
+    # Braced subscript first: the point is a non-brace run so "\to\infty"
+    # captures "\infty" whole (a lazy (.+?) stopped after the backslash).
     m = re.search(
-        r"\\lim\s*_\s*\{?\s*([a-z])\s*(?:\\to|\\rightarrow|->)\s*(.+?)\s*\}?\s*(.+)",
+        r"\\lim\s*_\{\s*([a-z])\s*(?:\\to|\\rightarrow|->)\s*([^{}]+?)\s*\}\s*(.+)",
         source,
     )
+    if not m:
+        # Unbraced subscript: \lim_x \to a expr
+        m = re.search(
+            r"\\lim\s*_([a-z])\s*(?:\\to|\\rightarrow|->)\s*(\S+)\s+(.+)",
+            source,
+        )
     if m:
         return {"var": m.group(1), "point": m.group(2).strip(), "expr": m.group(3).strip()}
 

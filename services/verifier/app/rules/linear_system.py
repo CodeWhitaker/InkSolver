@@ -145,8 +145,9 @@ def check_value_in_answer(answer_text: str, var_name: str, expected_value) -> bo
     if answer_expr is not None and expressions_match_or_numeric(answer_expr, expected_value):
         return True
 
-    # Look for patterns like "x = 3" or "x=3" in the text.
-    pattern = rf"{re.escape(var_name)}\s*=\s*([^,;\s]+)"
+    # Look for patterns like "x = 3" or "x=3" in the text. The leading \b
+    # keeps "x" from matching inside longer words (e.g. "max = 5").
+    pattern = rf"\b{re.escape(var_name)}\s*=\s*([^,;\s]+)"
     for m in re.finditer(pattern, answer_text):
         val = parse_math_expression(m.group(1))
         if val is not None and expressions_match_or_numeric(val, expected_value):

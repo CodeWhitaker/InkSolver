@@ -5,11 +5,20 @@ from app.engine.responses import SolveStep, StepVerification
 NUMERIC_MATCH_TOL = 1e-8
 
 def expressions_match(left, right) -> bool:
-    reduced = simplify(left - right)
+    # SymPy can raise internally on exotic inputs (e.g. unevaluated integrals
+    # hitting bugs in risch); never let that escape as a 500 — report no
+    # match and let the numeric fallback have a try.
+    try:
+        reduced = simplify(left - right)
+    except Exception:
+        return False
     if reduced == 0:
         return True
 
-    equals = reduced.equals(0)
+    try:
+        equals = reduced.equals(0)
+    except Exception:
+        return False
     return equals is True
 
 def numeric_match(left, right, tol: float = NUMERIC_MATCH_TOL) -> bool:

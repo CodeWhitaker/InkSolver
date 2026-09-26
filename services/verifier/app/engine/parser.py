@@ -1,5 +1,5 @@
 import re
-from sympy import Symbol, cos, exp, log, oo, pi, sin, sqrt, tan
+from sympy import E, Expr, Symbol, cos, cosh, exp, log, oo, pi, sin, sinh, sqrt, tan, tanh
 from sympy.parsing.sympy_parser import (
     convert_xor,
     implicit_multiplication_application,
@@ -27,16 +27,20 @@ LOCAL_SYMBOLS = {
     "sin": sin,
     "cos": cos,
     "tan": tan,
+    "sinh": sinh,
+    "cosh": cosh,
+    "tanh": tanh,
     "log": log,
     "ln": log,
     "sqrt": sqrt,
     "exp": exp,
+    "e": E,
     "pi": pi,
     "inf": oo,
     "infinity": oo,
     "oo": oo,
 }
-FUNCTION_NAMES = ("sin", "cos", "tan", "log", "ln", "sqrt", "exp")
+FUNCTION_NAMES = ("sinh", "cosh", "tanh", "sin", "cos", "tan", "log", "ln", "sqrt", "exp")
 
 def parse_math_expression(value: str):
     if not value.strip():
@@ -45,7 +49,7 @@ def parse_math_expression(value: str):
     text = clean_latex_expression(value)
 
     try:
-        return parse_expr(
+        result = parse_expr(
             text,
             local_dict=LOCAL_SYMBOLS,
             transformations=TRANSFORMATIONS,
@@ -54,6 +58,11 @@ def parse_math_expression(value: str):
     except Exception:
         return None
 
+    # Guard against non-expression parses (tuples, relationals, ...): downstream
+    # code calls simplify()/diff() on the result, which raises TypeError on
+    # those and would turn into a 500 instead of unverifiable/mismatch.
+    return result if isinstance(result, Expr) else None
+
 def clean_latex_expression(value: str) -> str:
     text = english_math_words(value)
     text = text.strip().strip("$")
@@ -61,7 +70,7 @@ def clean_latex_expression(value: str) -> str:
     text = text.replace("\\,", "").replace("\\;", "")
     text = text.replace("\\mathrm{d}x", "dx").replace("\\mathrm{d}", "d")
     text = text.replace("\\cdot", "*").replace("\\times", "*")
-    text = text.replace("\\pi", "pi")
+    text = text.replace("\\pi", "pi").replace("\\infty", "oo")
 
     text = replace_command_groups(text, "\\frac", lambda a, b: f"(({a})/({b}))")
     text = replace_command_groups(text, "\\sqrt", lambda a, _b=None: f"sqrt({a})")
@@ -70,6 +79,9 @@ def clean_latex_expression(value: str) -> str:
         "\\sin": "sin",
         "\\cos": "cos",
         "\\tan": "tan",
+        "\\sinh": "sinh",
+        "\\cosh": "cosh",
+        "\\tanh": "tanh",
         "\\ln": "log",
         "\\log": "log",
         "\\exp": "exp",
@@ -88,6 +100,9 @@ def clean_latex_expression(value: str) -> str:
     return text
 
 def normalize_function_calls(text: str) -> str:
+    # Hyperbolic names are listed first in FUNCTION_NAMES, and the (?!h\b)
+    # guard keeps "sin"/"cos"/"tan" from matching the prefix of
+    # "sinh"/"cosh"/"tanh" (e.g. "sinh x" must not become "sin(h) x").
     for function_name in FUNCTION_NAMES:
         text = re.sub(
             rf"\b{function_name}\s+([A-Za-z](?:\s*\^\s*\(?[-A-Za-z0-9+*/]+\)?)?)",
@@ -95,7 +110,7 @@ def normalize_function_calls(text: str) -> str:
             text,
         )
         text = re.sub(
-            rf"\b{function_name}([A-Za-z])\b",
+            rf"\b{function_name}(?!h\b)([A-Za-z])\b",
             rf"{function_name}(\1)",
             text,
         )
